@@ -4,17 +4,22 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from scipy.spatial.distance import cosine
 import openai
+from google.cloud import translate_v2 as translate
 
 # Load SBERT model
 sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # Streamlit UI
-st.title("Semantic URL Matcher")
+st.title("Semantic URL Matcher with Google Cloud Translation")
 
 st.sidebar.header("Settings")
 use_openai = st.sidebar.checkbox("Use OpenAI Embeddings (Requires API Key)", value=False)
 openai_api_key = st.sidebar.text_input("OpenAI API Key", type="password", disabled=not use_openai)
+google_api_key = st.sidebar.text_input("Google Cloud Translation API Key", type="password")
 similarity_threshold = st.sidebar.slider("Similarity Threshold", 0.0, 1.0, 0.5, 0.01)
+
+# Option to manually provide source language (optional)
+manual_source_language = st.sidebar.text_input("Source Language Code (optional, e.g., 'fr' for French)")
 
 st.subheader("Upload Your Data")
 broken_file = st.file_uploader("Upload Broken URLs CSV", type="csv")
@@ -41,9 +46,29 @@ if broken_file and working_file:
             def get_embedding(text):
                 return sbert_model.encode(text, convert_to_numpy=True)
 
+        # Set up Google Cloud Translation if API key is provided
+        if google_api_key:
+            translate_client = translate.Client(api_key=google_api_key)
+
+            def translate_to_english(text):
+                try:
+                    translate_params = {"q": text, "target": "en"}
+                    if manual_source_language:
+                        translate_params["source"] = manual_source_language  # Use user-provided language if available
+                    result = translate_client.translate(**translate_params)
+                    return result["translatedText"]
+                except Exception as e:
+                    return text  # Return original if translation fails
+
+            # Translate broken URLs if needed
+            st.text("Translating non-English URLs, this may take a moment...")
+            translated_broken_urls = [translate_to_english(url) for url in broken_urls]
+        else:
+            translated_broken_urls = broken_urls  # If no API key, use original URLs
+
         # Compute embeddings
         st.text("Computing embeddings, this may take a moment...")
-        broken_embeddings = np.array([get_embedding(url) for url in broken_urls])
+        broken_embeddings = np.array([get_embedding(url) for url in translated_broken_urls])
         working_embeddings = np.array([get_embedding(url) for url in working_urls])
 
         # Compute similarity scores
@@ -55,7 +80,8 @@ if broken_file and working_file:
             for rank, (index, score) in enumerate(top_matches):
                 if score >= similarity_threshold:
                     matches.append({
-                        "Broken URL": broken_urls[i],
+                        "Original Broken URL": broken_urls[i],
+                        "Translated Broken URL": translated_broken_urls[i] if google_api_key else "Not Translated",
                         "Match Rank": rank + 1,
                         "Matched URL": working_urls[index],
                         "Similarity Score": score
@@ -73,4 +99,4 @@ if broken_file and working_file:
         else:
             st.warning("No matches found above the similarity threshold.")
 
-st.sidebar.info("Ensure CSVs have a single column named 'URL'. The tool will compute semantic matches.")
+st.sidebar.info("Ensure CSVs have a single column named 'URL'. The tool will translate non-English URLs if a Google API key is provided.")
