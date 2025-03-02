@@ -7,7 +7,6 @@ import openai
 import json
 import os
 from google.cloud import translate_v2 as translate
-import time
 
 # Load SBERT model
 sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -68,8 +67,14 @@ if broken_file and working_file:
                     if manual_source_language:
                         translate_params["source"] = manual_source_language  # Use user-provided language if available
                     result = translate_client.translate(**translate_params)
-                    return result["translatedText"]
+                    translated_text = result.get("translatedText", text)
+
+                    if translated_text == text:
+                        st.warning(f"Translation unchanged for: {text}")
+
+                    return translated_text
                 except Exception as e:
+                    st.error(f"Translation failed for '{text}': {str(e)}")
                     return text  # Return original if translation fails
 
             # Translate broken URLs if needed
@@ -77,7 +82,9 @@ if broken_file and working_file:
             translated_broken_urls = []
             translation_progress = st.progress(0)
             for i, url in enumerate(broken_urls):
-                translated_broken_urls.append(translate_to_english(url))
+                translated_text = translate_to_english(url)
+                translated_broken_urls.append(translated_text)
+                st.write(f"Original: {url} -> Translated: {translated_text}")
                 translation_progress.progress((i + 1) / len(broken_urls))
             st.success("Translation completed!")
 
