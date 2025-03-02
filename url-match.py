@@ -37,7 +37,7 @@ def preprocess_url(url):
         parsed_url = urllib.parse.urlparse(url)
         path = parsed_url.path  # Get only the URL path
         path = urllib.parse.unquote(path)  # Decode URL-encoded characters
-        path = path.replace("-", " ").replace("_", " ")  # Convert hyphens/underscores to spaces
+        path = path.replace("-", " ").replace("_", " ").replace("/", " ")  # Convert hyphens, underscores, and slashes to spaces
         path = re.sub(r'[^a-zA-ZÃ-ÃÃ-Ã¶Ã¸-Ã¿\s]', '', path)  # Remove special characters and numbers
         path = path.strip()  # Remove leading/trailing spaces
         return path if path else url  # Return cleaned path or original if empty
