@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import urllib.parse
+import re
 from sentence_transformers import SentenceTransformer
 from scipy.spatial.distance import cosine
 import openai
@@ -29,6 +31,19 @@ st.subheader("Upload Your Data")
 broken_file = st.file_uploader("Upload Broken URLs CSV", type="csv")
 working_file = st.file_uploader("Upload Working URLs CSV", type="csv")
 
+# Function to preprocess URLs for better translation
+def preprocess_url(url):
+    try:
+        parsed_url = urllib.parse.urlparse(url)
+        path = parsed_url.path  # Get only the URL path
+        path = urllib.parse.unquote(path)  # Decode URL-encoded characters
+        path = path.replace("-", " ").replace("_", " ")  # Convert hyphens/underscores to spaces
+        path = re.sub(r'[^a-zA-ZÃ-ÃÃ-Ã¶Ã¸-Ã¿\s]', '', path)  # Remove special characters and numbers
+        path = path.strip()  # Remove leading/trailing spaces
+        return path if path else url  # Return cleaned path or original if empty
+    except Exception as e:
+        return url  # Fallback to original URL if an error occurs
+
 if broken_file and working_file:
     broken_df = pd.read_csv(broken_file)
     working_df = pd.read_csv(working_file)
@@ -39,6 +54,9 @@ if broken_file and working_file:
     else:
         broken_urls = broken_df['URL'].tolist()
         working_urls = working_df['URL'].tolist()
+
+        # Preprocess URLs before translation
+        cleaned_broken_urls = [preprocess_url(url) for url in broken_urls]
 
         # Select embedding model
         if use_openai and openai_api_key:
@@ -51,7 +69,7 @@ if broken_file and working_file:
                 return sbert_model.encode(text, convert_to_numpy=True)
 
         # Set up Google Cloud Translation if credentials are provided
-        translated_broken_urls = broken_urls  # Default to original URLs
+        translated_broken_urls = cleaned_broken_urls  # Default to processed URLs
         if google_credentials:
             st.text("Authenticating with Google Cloud Translation API...")
             credentials_path = "/tmp/google_credentials.json"
@@ -82,11 +100,11 @@ if broken_file and working_file:
             st.text("Translating non-English URLs, please wait...")
             translated_broken_urls = []
             translation_progress = st.progress(0)
-            for i, url in enumerate(broken_urls):
-                translated_text = translate_to_english(url)
+            for i, text in enumerate(cleaned_broken_urls):
+                translated_text = translate_to_english(text)
                 translated_broken_urls.append(translated_text)
-                st.write(f"Original: {url} -> Translated: {translated_text}")
-                translation_progress.progress((i + 1) / len(broken_urls))
+                st.write(f"Original: {broken_urls[i]} -> Cleaned: {text} -> Translated: {translated_text}")
+                translation_progress.progress((i + 1) / len(cleaned_broken_urls))
             st.success("Translation completed!")
 
         # Compute embeddings
@@ -121,7 +139,8 @@ if broken_file and working_file:
                 if score >= similarity_threshold:
                     matches.append({
                         "Original Broken URL": broken_urls[i],
-                        "Translated Broken URL": translated_broken_urls[i] if google_credentials else "Not Translated",
+                        "Cleaned Broken Text": cleaned_broken_urls[i],
+                        "Translated Broken Text": translated_broken_urls[i] if google_credentials else "Not Translated",
                         "Match Rank": rank + 1,
                         "Matched URL": working_urls[index],
                         "Similarity Score": score
