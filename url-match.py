@@ -63,10 +63,11 @@ if broken_file and working_file:
 
             def translate_to_english(text):
                 try:
-                    translate_params = {"q": text, "target": "en"}
                     if manual_source_language:
-                        translate_params["source"] = manual_source_language  # Use user-provided language if available
-                    result = translate_client.translate(**translate_params)
+                        result = translate_client.translate(text, target_language="en", source_language=manual_source_language)
+                    else:
+                        result = translate_client.translate(text, target_language="en")
+
                     translated_text = result.get("translatedText", text)
 
                     if translated_text == text:
