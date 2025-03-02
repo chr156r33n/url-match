@@ -7,6 +7,7 @@ import openai
 import json
 import os
 from google.cloud import translate_v2 as translate
+import time
 
 # Load SBERT model
 sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -51,7 +52,9 @@ if broken_file and working_file:
                 return sbert_model.encode(text, convert_to_numpy=True)
 
         # Set up Google Cloud Translation if credentials are provided
+        translated_broken_urls = broken_urls  # Default to original URLs
         if google_credentials:
+            st.text("Authenticating with Google Cloud Translation API...")
             credentials_path = "/tmp/google_credentials.json"
             with open(credentials_path, "wb") as f:
                 f.write(google_credentials.getvalue())
@@ -70,18 +73,38 @@ if broken_file and working_file:
                     return text  # Return original if translation fails
 
             # Translate broken URLs if needed
-            st.text("Translating non-English URLs, this may take a moment...")
-            translated_broken_urls = [translate_to_english(url) for url in broken_urls]
-        else:
-            translated_broken_urls = broken_urls  # If no credentials, use original URLs
+            st.text("Translating non-English URLs, please wait...")
+            translated_broken_urls = []
+            translation_progress = st.progress(0)
+            for i, url in enumerate(broken_urls):
+                translated_broken_urls.append(translate_to_english(url))
+                translation_progress.progress((i + 1) / len(broken_urls))
+            st.success("Translation completed!")
 
         # Compute embeddings
-        st.text("Computing embeddings, this may take a moment...")
-        broken_embeddings = np.array([get_embedding(url) for url in translated_broken_urls])
-        working_embeddings = np.array([get_embedding(url) for url in working_urls])
+        st.text("Computing embeddings for broken URLs, please wait...")
+        embedding_progress = st.progress(0)
+        broken_embeddings = []
+        for i, url in enumerate(translated_broken_urls):
+            broken_embeddings.append(get_embedding(url))
+            embedding_progress.progress((i + 1) / len(translated_broken_urls))
+        st.success("Embeddings for broken URLs completed!")
+
+        st.text("Computing embeddings for working URLs, please wait...")
+        embedding_progress = st.progress(0)
+        working_embeddings = []
+        for i, url in enumerate(working_urls):
+            working_embeddings.append(get_embedding(url))
+            embedding_progress.progress((i + 1) / len(working_urls))
+        st.success("Embeddings for working URLs completed!")
+
+        broken_embeddings = np.array(broken_embeddings)
+        working_embeddings = np.array(working_embeddings)
 
         # Compute similarity scores
+        st.text("Calculating similarity scores...")
         matches = []
+        similarity_progress = st.progress(0)
         for i, b_emb in enumerate(broken_embeddings):
             similarities = [1 - cosine(b_emb, w_emb) for w_emb in working_embeddings]
             top_matches = sorted(enumerate(similarities), key=lambda x: x[1], reverse=True)[:3]
@@ -95,6 +118,9 @@ if broken_file and working_file:
                         "Matched URL": working_urls[index],
                         "Similarity Score": score
                     })
+            similarity_progress.progress((i + 1) / len(broken_embeddings))
+
+        st.success("Similarity calculation completed!")
 
         results_df = pd.DataFrame(matches)
 
