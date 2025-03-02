@@ -4,3 +4,4 @@ numpy
 sentence-transformers
 scipy
 openai
+google-cloud-translate
