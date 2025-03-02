@@ -135,16 +135,26 @@ if broken_file and working_file:
             similarities = [1 - cosine(b_emb, w_emb) for w_emb in working_embeddings]
             top_matches = sorted(enumerate(similarities), key=lambda x: x[1], reverse=True)[:3]
 
-            for rank, (index, score) in enumerate(top_matches):
-                if score >= similarity_threshold:
-                    matches.append({
-                        "Original Broken URL": broken_urls[i],
-                        "Cleaned Broken Text": cleaned_broken_urls[i],
-                        "Translated Broken Text": translated_broken_urls[i] if google_credentials else "Not Translated",
-                        "Match Rank": rank + 1,
-                        "Matched URL": working_urls[index],
-                        "Similarity Score": score
-                    })
+            if not top_matches or max([score for _, score in top_matches]) < similarity_threshold:
+                matches.append({
+                    "Original Broken URL": broken_urls[i],
+                    "Cleaned Broken Text": cleaned_broken_urls[i],
+                    "Translated Broken Text": translated_broken_urls[i] if google_credentials else "Not Translated",
+                    "Match Rank": "No Match",
+                    "Matched URL": "No Match Found",
+                    "Similarity Score": "N/A"
+                })
+            else:
+                for rank, (index, score) in enumerate(top_matches):
+                    if score >= similarity_threshold:
+                        matches.append({
+                            "Original Broken URL": broken_urls[i],
+                            "Cleaned Broken Text": cleaned_broken_urls[i],
+                            "Translated Broken Text": translated_broken_urls[i] if google_credentials else "Not Translated",
+                            "Match Rank": rank + 1,
+                            "Matched URL": working_urls[index],
+                            "Similarity Score": score
+                        })
             similarity_progress.progress((i + 1) / len(broken_embeddings))
 
         st.success("Similarity calculation completed!")
@@ -152,13 +162,13 @@ if broken_file and working_file:
         results_df = pd.DataFrame(matches)
 
         if not results_df.empty:
-            st.subheader("Top Matches")
+            st.subheader("Top Matches (Including Non-Matches)")
             st.dataframe(results_df)
 
             # Download CSV option
             csv_data = results_df.to_csv(index=False).encode("utf-8")
             st.download_button("Download Matches CSV", csv_data, "semantic_url_matches.csv", "text/csv")
         else:
-            st.warning("No matches found above the similarity threshold.")
+            st.warning("No matches found.")
 
 st.sidebar.info("Ensure CSVs have a single column named 'URL'. Upload a Google Cloud Service Account JSON to enable translation.")
