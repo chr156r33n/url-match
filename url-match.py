@@ -4,6 +4,8 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from scipy.spatial.distance import cosine
 import openai
+import json
+import os
 from google.cloud import translate_v2 as translate
 
 # Load SBERT model
@@ -15,8 +17,10 @@ st.title("Semantic URL Matcher with Google Cloud Translation")
 st.sidebar.header("Settings")
 use_openai = st.sidebar.checkbox("Use OpenAI Embeddings (Requires API Key)", value=False)
 openai_api_key = st.sidebar.text_input("OpenAI API Key", type="password", disabled=not use_openai)
-google_api_key = st.sidebar.text_input("Google Cloud Translation API Key", type="password")
 similarity_threshold = st.sidebar.slider("Similarity Threshold", 0.0, 1.0, 0.5, 0.01)
+
+# File uploader for Google Cloud service account JSON
+google_credentials = st.sidebar.file_uploader("Upload Google Cloud Service Account JSON", type="json")
 
 # Option to manually provide source language (optional)
 manual_source_language = st.sidebar.text_input("Source Language Code (optional, e.g., 'fr' for French)")
@@ -46,9 +50,14 @@ if broken_file and working_file:
             def get_embedding(text):
                 return sbert_model.encode(text, convert_to_numpy=True)
 
-        # Set up Google Cloud Translation if API key is provided
-        if google_api_key:
-            translate_client = translate.Client(api_key=google_api_key)
+        # Set up Google Cloud Translation if credentials are provided
+        if google_credentials:
+            credentials_path = "/tmp/google_credentials.json"
+            with open(credentials_path, "wb") as f:
+                f.write(google_credentials.getvalue())
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
+
+            translate_client = translate.Client()
 
             def translate_to_english(text):
                 try:
@@ -64,7 +73,7 @@ if broken_file and working_file:
             st.text("Translating non-English URLs, this may take a moment...")
             translated_broken_urls = [translate_to_english(url) for url in broken_urls]
         else:
-            translated_broken_urls = broken_urls  # If no API key, use original URLs
+            translated_broken_urls = broken_urls  # If no credentials, use original URLs
 
         # Compute embeddings
         st.text("Computing embeddings, this may take a moment...")
@@ -81,7 +90,7 @@ if broken_file and working_file:
                 if score >= similarity_threshold:
                     matches.append({
                         "Original Broken URL": broken_urls[i],
-                        "Translated Broken URL": translated_broken_urls[i] if google_api_key else "Not Translated",
+                        "Translated Broken URL": translated_broken_urls[i] if google_credentials else "Not Translated",
                         "Match Rank": rank + 1,
                         "Matched URL": working_urls[index],
                         "Similarity Score": score
@@ -99,4 +108,4 @@ if broken_file and working_file:
         else:
             st.warning("No matches found above the similarity threshold.")
 
-st.sidebar.info("Ensure CSVs have a single column named 'URL'. The tool will translate non-English URLs if a Google API key is provided.")
+st.sidebar.info("Ensure CSVs have a single column named 'URL'. Upload a Google Cloud Service Account JSON to enable translation.")
