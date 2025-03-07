@@ -45,9 +45,15 @@ def preprocess_url(url):
     except Exception as e:
         return url  # Fallback to original URL if an error occurs
 
-def should_match_product(url):
+def should_match_product(broken_url, working_url):
     if match_product_flag:
-        return "/product/" in url and "/products/" in url
+        # Match broken URLs with "/product/" to working URLs with "/products/"
+        if "/product/" in broken_url and "/products/" in working_url:
+            return True
+        # Additionally, match URLs with "/products/" to "/product/" URLs
+        if "/products/" in broken_url and "/product/" in working_url:
+            return True
+        return False
     return True  # Always match if the flag is not enabled
 
 if broken_file and working_file:
@@ -118,10 +124,10 @@ if broken_file and working_file:
         embedding_progress = st.progress(0)
         broken_embeddings = []
         for i, url in enumerate(translated_broken_urls):
-            if should_match_product(url):  # Check if URL should be considered based on the flag
+            if should_match_product(url, working_urls[i]):  # Check if URL should be considered based on the flag
                 broken_embeddings.append(get_embedding(url))
             else:
-                broken_embeddings.append(None)  # Skip if URL does not match criteria
+                broken_embeddings.append(None)  # Skip if no match found
             embedding_progress.progress((i + 1) / len(translated_broken_urls))
         st.success("Embeddings for broken URLs completed!")
 
@@ -129,10 +135,10 @@ if broken_file and working_file:
         embedding_progress = st.progress(0)
         working_embeddings = []
         for i, url in enumerate(working_urls):
-            if should_match_product(url):  # Check if URL should be considered based on the flag
+            if should_match_product(translated_broken_urls[i], url):  # Check if URL should be considered based on the flag
                 working_embeddings.append(get_embedding(url))
             else:
-                working_embeddings.append(None)  # Skip if URL does not match criteria
+                working_embeddings.append(None)  # Skip if no match found
             embedding_progress.progress((i + 1) / len(working_urls))
         st.success("Embeddings for working URLs completed!")
 
