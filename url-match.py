@@ -1,4 +1,4 @@
-import streamlit as st
+aaimport streamlit as st
 import pandas as pd
 import numpy as np
 import urllib.parse
@@ -119,77 +119,87 @@ if broken_file and working_file:
                 translation_progress.progress((i + 1) / len(cleaned_broken_urls))
             st.success("Translation completed!")
 
-        # Compute embeddings
-        st.text("Computing embeddings for broken URLs, please wait...")
-        embedding_progress = st.progress(0)
-        broken_embeddings = []
-        for i, url in enumerate(translated_broken_urls):
-            if should_match_product(url, working_urls[i]):  # Check if URL should be considered based on the flag
-                broken_embeddings.append(get_embedding(url))
-            else:
-                broken_embeddings.append(None)  # Skip if no match found
-            embedding_progress.progress((i + 1) / len(translated_broken_urls))
-        st.success("Embeddings for broken URLs completed!")
+# Compute embeddings for broken URLs
+st.text("Computing embeddings for broken URLs, please wait...")
+embedding_progress = st.progress(0)
+broken_embeddings = []
+matching_broken_urls = []  # Store URLs that are actually processed
+for i, url in enumerate(translated_broken_urls):
+    matching_urls = [w_url for w_url in working_urls if should_match_product(url, w_url)]  # Apply product matching logic
+    if matching_urls:  # Only process if there is a valid match
+        broken_embeddings.append(get_embedding(url))
+        matching_broken_urls.append(url)  # Add this URL to the list of matched URLs
+    else:
+        broken_embeddings.append(None)  # Skip if no match found
+    embedding_progress.progress((i + 1) / len(translated_broken_urls))
+st.success("Embeddings for broken URLs completed!")
 
-        st.text("Computing embeddings for working URLs, please wait...")
-        embedding_progress = st.progress(0)
-        working_embeddings = []
-        for i, url in enumerate(working_urls):
-            if should_match_product(translated_broken_urls[i], url):  # Check if URL should be considered based on the flag
-                working_embeddings.append(get_embedding(url))
-            else:
-                working_embeddings.append(None)  # Skip if no match found
-            embedding_progress.progress((i + 1) / len(working_urls))
-        st.success("Embeddings for working URLs completed!")
+# Compute embeddings for working URLs
+st.text("Computing embeddings for working URLs, please wait...")
+embedding_progress = st.progress(0)
+working_embeddings = []
+matching_working_urls = []  # Store URLs that are actually processed
+for i, url in enumerate(working_urls):
+    # Only process if there is a corresponding matched broken URL
+    matching_urls = [b_url for b_url in translated_broken_urls if should_match_product(b_url, url)]  
+    if matching_urls:  # Only process if there is a valid match
+        working_embeddings.append(get_embedding(url))
+        matching_working_urls.append(url)  # Add this URL to the list of matched URLs
+    else:
+        working_embeddings.append(None)  # Skip if no match found
+    embedding_progress.progress((i + 1) / len(working_urls))
+st.success("Embeddings for working URLs completed!")
 
-        # Filter out None values in embeddings for broken and working URLs
-        broken_embeddings = [emb for emb in broken_embeddings if emb is not None]
-        working_embeddings = [emb for emb in working_embeddings if emb is not None]
-        broken_urls = [url for url, emb in zip(broken_urls, broken_embeddings) if emb is not None]
-        working_urls = [url for url, emb in zip(working_urls, working_embeddings) if emb is not None]
+# Filter out None values in embeddings for broken and working URLs
+broken_embeddings = [emb for emb in broken_embeddings if emb is not None]
+working_embeddings = [emb for emb in working_embeddings if emb is not None]
+broken_urls = [url for url, emb in zip(matching_broken_urls, broken_embeddings) if emb is not None]
+working_urls = [url for url, emb in zip(matching_working_urls, working_embeddings) if emb is not None]
 
-        # Compute similarity scores
-        st.text("Calculating similarity scores...")
-        matches = []
-        similarity_progress = st.progress(0)
-        for i, b_emb in enumerate(broken_embeddings):
-            similarities = [1 - cosine(b_emb, w_emb) for w_emb in working_embeddings]
-            top_matches = sorted(enumerate(similarities), key=lambda x: x[1], reverse=True)[:3]
+# Ensure we don't have misaligned lists for similarity calculation
+if len(broken_embeddings) != len(working_embeddings):
+    st.error("Mismatch in the number of embeddings for broken and working URLs. Please check your data.")
+else:
+    # Compute similarity scores
+    st.text("Calculating similarity scores...")
+    matches = []
+    similarity_progress = st.progress(0)
+    for i, b_emb in enumerate(broken_embeddings):
+        similarities = [1 - cosine(b_emb, w_emb) for w_emb in working_embeddings]
+        top_matches = sorted(enumerate(similarities), key=lambda x: x[1], reverse=True)[:3]
 
-            if not top_matches or max([score for _, score in top_matches]) < similarity_threshold:
-                matches.append({
-                    "Original Broken URL": broken_urls[i],
-                    "Cleaned Broken Text": cleaned_broken_urls[i],
-                    "Translated Broken Text": translated_broken_urls[i] if google_credentials else "Not Translated",
-                    "Match Rank": "No Match",
-                    "Matched URL": "No Match Found",
-                    "Similarity Score": "N/A"
-                })
-            else:
-                for rank, (index, score) in enumerate(top_matches):
-                    if score >= similarity_threshold:
-                        matches.append({
-                            "Original Broken URL": broken_urls[i],
-                            "Cleaned Broken Text": cleaned_broken_urls[i],
-                            "Translated Broken Text": translated_broken_urls[i] if google_credentials else "Not Translated",
-                            "Match Rank": rank + 1,
-                            "Matched URL": working_urls[index],
-                            "Similarity Score": score
-                        })
-            similarity_progress.progress((i + 1) / len(broken_embeddings))
-
-        st.success("Similarity calculation completed!")
-
-        results_df = pd.DataFrame(matches)
-
-        if not results_df.empty:
-            st.subheader("Top Matches (Including Non-Matches)")
-            st.dataframe(results_df)
-
-            # Download CSV option
-            csv_data = results_df.to_csv(index=False).encode("utf-8")
-            st.download_button("Download Matches CSV", csv_data, "semantic_url_matches.csv", "text/csv")
+        if not top_matches or max([score for _, score in top_matches]) < similarity_threshold:
+            matches.append({
+                "Original Broken URL": broken_urls[i],
+                "Cleaned Broken Text": cleaned_broken_urls[i],
+                "Translated Broken Text": translated_broken_urls[i] if google_credentials else "Not Translated",
+                "Match Rank": "No Match",
+                "Matched URL": "No Match Found",
+                "Similarity Score": "N/A"
+            })
         else:
-            st.warning("No matches found.")
+            for rank, (index, score) in enumerate(top_matches):
+                if score >= similarity_threshold:
+                    matches.append({
+                        "Original Broken URL": broken_urls[i],
+                        "Cleaned Broken Text": cleaned_broken_urls[i],
+                        "Translated Broken Text": translated_broken_urls[i] if google_credentials else "Not Translated",
+                        "Match Rank": rank + 1,
+                        "Matched URL": working_urls[index],
+                        "Similarity Score": score
+                    })
+        similarity_progress.progress((i + 1) / len(broken_embeddings))
 
-st.sidebar.info("Ensure CSVs have a single column named 'URL'. Upload a Google Cloud Service Account JSON to enable translation.")
+    st.success("Similarity calculation completed!")
+
+    results_df = pd.DataFrame(matches)
+
+    if not results_df.empty:
+        st.subheader("Top Matches (Including Non-Matches)")
+        st.dataframe(results_df)
+
+        # Download CSV option
+        csv_data = results_df.to_csv(index=False).encode("utf-8")
+        st.download_button("Download Matches CSV", csv_data, "semantic_url_matches.csv", "text/csv")
+    else:
+        st.warning("No matches found.")
