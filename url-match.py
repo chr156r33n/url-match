@@ -20,6 +20,7 @@ st.sidebar.header("Settings")
 use_openai = st.sidebar.checkbox("Use OpenAI Embeddings (Requires API Key)", value=False)
 openai_api_key = st.sidebar.text_input("OpenAI API Key", type="password", disabled=not use_openai)
 similarity_threshold = st.sidebar.slider("Similarity Threshold", 0.0, 1.0, 0.5, 0.01)
+match_product_flag = st.sidebar.checkbox("Match /product/ URLs with /products/ URLs", value=False)  # New flag
 
 # File uploader for Google Cloud service account JSON
 google_credentials = st.sidebar.file_uploader("Upload Google Cloud Service Account JSON", type="json")
@@ -43,6 +44,11 @@ def preprocess_url(url):
         return path if path else url  # Return cleaned path or original if empty
     except Exception as e:
         return url  # Fallback to original URL if an error occurs
+
+def should_match_product(url):
+    if match_product_flag:
+        return "/product/" in url and "/products/" in url
+    return True  # Always match if the flag is not enabled
 
 if broken_file and working_file:
     broken_df = pd.read_csv(broken_file)
@@ -112,7 +118,10 @@ if broken_file and working_file:
         embedding_progress = st.progress(0)
         broken_embeddings = []
         for i, url in enumerate(translated_broken_urls):
-            broken_embeddings.append(get_embedding(url))
+            if should_match_product(url):  # Check if URL should be considered based on the flag
+                broken_embeddings.append(get_embedding(url))
+            else:
+                broken_embeddings.append(None)  # Skip if URL does not match criteria
             embedding_progress.progress((i + 1) / len(translated_broken_urls))
         st.success("Embeddings for broken URLs completed!")
 
@@ -120,12 +129,18 @@ if broken_file and working_file:
         embedding_progress = st.progress(0)
         working_embeddings = []
         for i, url in enumerate(working_urls):
-            working_embeddings.append(get_embedding(url))
+            if should_match_product(url):  # Check if URL should be considered based on the flag
+                working_embeddings.append(get_embedding(url))
+            else:
+                working_embeddings.append(None)  # Skip if URL does not match criteria
             embedding_progress.progress((i + 1) / len(working_urls))
         st.success("Embeddings for working URLs completed!")
 
-        broken_embeddings = np.array(broken_embeddings)
-        working_embeddings = np.array(working_embeddings)
+        # Filter out None values in embeddings for broken and working URLs
+        broken_embeddings = [emb for emb in broken_embeddings if emb is not None]
+        working_embeddings = [emb for emb in working_embeddings if emb is not None]
+        broken_urls = [url for url, emb in zip(broken_urls, broken_embeddings) if emb is not None]
+        working_urls = [url for url, emb in zip(working_urls, working_embeddings) if emb is not None]
 
         # Compute similarity scores
         st.text("Calculating similarity scores...")
